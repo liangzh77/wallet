@@ -17,11 +17,11 @@
 
 **目的**: 搭建项目结构，拷贝现有前端，安装依赖
 
-- [ ] T001 将 backup/ios-style-family-wallet/ 下所有文件拷贝到项目根目录（App.tsx, index.tsx, types.ts, index.html, hooks/, vite.config.ts, tsconfig.json, package.json）
-- [ ] T002 更新 package.json，添加运行时依赖（bcryptjs, jose, @vercel/postgres）和开发依赖（@types/bcryptjs, @vercel/node）
-- [ ] T003 [P] 创建 vercel.json 配置文件（buildCommand, outputDirectory, rewrites 规则），参见 plan.md Vercel 配置章节
-- [ ] T004 [P] 创建 .env.local 模板文件，包含 POSTGRES_URL, JWT_SECRET, ADMIN_USERNAMES 环境变量占位
-- [ ] T005 [P] 创建 api/tsconfig.json，配置 Node.js 目标环境（与前端 tsconfig.json 分离）
+- [x] T001 将 backup/ios-style-family-wallet/ 下所有文件拷贝到项目根目录（App.tsx, index.tsx, types.ts, index.html, hooks/, vite.config.ts, tsconfig.json, package.json）
+- [x] T002 更新 package.json，添加运行时依赖（bcryptjs, jose, @vercel/postgres）和开发依赖（@types/bcryptjs, @vercel/node）
+- [x] T003 [P] 创建 vercel.json 配置文件（buildCommand, outputDirectory, rewrites 规则），参见 plan.md Vercel 配置章节
+- [x] T004 [P] 创建 .env.local 模板文件，包含 POSTGRES_URL, JWT_SECRET, ADMIN_USERNAMES 环境变量占位
+- [x] T005 [P] 创建 api/tsconfig.json，配置 Node.js 目标环境（与前端 tsconfig.json 分离）
 
 ---
 
@@ -31,9 +31,9 @@
 
 **⚠️ 关键**: 此阶段未完成前，任何用户故事都不能开始
 
-- [ ] T006 创建 lib/db.ts，封装 @vercel/postgres 连接和建表 SQL 执行函数（参见 data-model.md 建表 SQL）
-- [ ] T007 创建 lib/auth.ts，实现 JWT 签发（signToken）和验证（verifyToken）函数，使用 jose 库，包含从请求头提取 token 的辅助函数
-- [ ] T008 更新 types.ts，添加 API 相关类型定义：AuthResponse, ApiError, 以及后端用的 JwtPayload（userId, username, isAdmin）
+- [x] T006 创建 lib/db.ts，封装 @vercel/postgres 连接和建表 SQL 执行函数（参见 data-model.md 建表 SQL）
+- [x] T007 创建 lib/auth.ts，实现 JWT 签发（signToken）和验证（verifyToken）函数，使用 jose 库，包含从请求头提取 token 的辅助函数
+- [x] T008 更新 types.ts，添加 API 相关类型定义：AuthResponse, ApiError, 以及后端用的 JwtPayload（userId, username, isAdmin）
 
 **检查点**: 基础设施就绪，可以开始实现用户故事
 
@@ -47,14 +47,14 @@
 
 ### 后端实现
 
-- [ ] T009 [P] [US1] 实现 POST /api/auth/register 注册端点 in api/auth/register.ts — 校验用户名密码非空、用户名唯一性检查、bcryptjs 哈希密码、插入 users 表、检查 ADMIN_USERNAMES 环境变量设置 isAdmin、签发 JWT 返回 token+user（参见 contracts/api.md 注册接口）
-- [ ] T010 [P] [US1] 实现 POST /api/auth/login 登录端点 in api/auth/login.ts — 查询用户、bcryptjs 比对密码、签发 JWT 返回 token+user，错误时返回统一提示"用户名或密码错误"（参见 contracts/api.md 登录接口）
-- [ ] T011 [P] [US1] 实现 GET /api/auth/me 当前用户端点 in api/auth/me.ts — 验证 JWT、返回用户信息（id, username, isAdmin）（参见 contracts/api.md me 接口）
+- [x] T009 [P] [US1] 实现 POST /api/auth/register 注册端点 in api/auth/register.ts — 校验用户名密码非空、用户名唯一性检查、bcryptjs 哈希密码、插入 users 表、检查 ADMIN_USERNAMES 环境变量设置 isAdmin、签发 JWT 返回 token+user（参见 contracts/api.md 注册接口）
+- [x] T010 [P] [US1] 实现 POST /api/auth/login 登录端点 in api/auth/login.ts — 查询用户、bcryptjs 比对密码、签发 JWT 返回 token+user，错误时返回统一提示"用户名或密码错误"（参见 contracts/api.md 登录接口）
+- [x] T011 [P] [US1] 实现 GET /api/auth/me 当前用户端点 in api/auth/me.ts — 验证 JWT、返回用户信息（id, username, isAdmin）（参见 contracts/api.md me 接口）
 
 ### 前端实现
 
-- [ ] T012 [US1] 在 App.tsx 中创建登录/注册页面 UI（保持 iOS 风格：圆角输入框、蓝色按钮、玻璃态背景），包含用户名输入、密码输入、确认密码（仅注册）、登录/注册切换按钮、错误提示显示
-- [ ] T013 [US1] 在 App.tsx 中添加认证状态管理 — useState 管理 token 和 user，从 localStorage 读取 token 初始化登录状态，调用 /api/auth/me 验证 token 有效性，未登录时显示登录页、已登录时显示主界面
+- [x] T012 [US1] 在 App.tsx 中创建登录/注册页面 UI（保持 iOS 风格：圆角输入框、蓝色按钮、玻璃态背景），包含用户名输入、密码输入、确认密码（仅注册）、登录/注册切换按钮、错误提示显示
+- [x] T013 [US1] 在 App.tsx 中添加认证状态管理 — useState 管理 token 和 user，从 localStorage 读取 token 初始化登录状态，调用 /api/auth/me 验证 token 有效性，未登录时显示登录页、已登录时显示主界面
 
 **检查点**: 用户可以注册、登录、保持会话。此时为最小可用产品（MVP）
 
@@ -68,16 +68,16 @@
 
 ### 后端实现
 
-- [ ] T014 [P] [US2] 实现 GET/POST /api/persons 端点 in api/persons/index.ts — GET 返回当前用户所有家庭成员（WHERE user_id），POST 创建新成员（参见 contracts/api.md 家庭成员接口）
-- [ ] T015 [P] [US2] 实现 PUT/DELETE /api/persons/[id] 端点 in api/persons/[id].ts — PUT 更新成员信息（name, dailyWage, balance），DELETE 删除成员（级联删除交易记录），均校验数据归属（参见 contracts/api.md）
-- [ ] T016 [P] [US2] 实现 GET/POST /api/transactions 端点 in api/transactions.ts — GET 按 personId 查询交易记录，POST 创建交易记录，均校验 person 归属当前用户（参见 contracts/api.md 交易记录接口）
+- [x] T014 [P] [US2] 实现 GET/POST /api/persons 端点 in api/persons/index.ts — GET 返回当前用户所有家庭成员（WHERE user_id），POST 创建新成员（参见 contracts/api.md 家庭成员接口）
+- [x] T015 [P] [US2] 实现 PUT/DELETE /api/persons/[id] 端点 in api/persons/[id].ts — PUT 更新成员信息（name, dailyWage, balance），DELETE 删除成员（级联删除交易记录），均校验数据归属（参见 contracts/api.md）
+- [x] T016 [P] [US2] 实现 GET/POST /api/transactions 端点 in api/transactions.ts — GET 按 personId 查询交易记录，POST 创建交易记录，均校验 person 归属当前用户（参见 contracts/api.md 交易记录接口）
 
 ### 前端改造
 
-- [ ] T017 [US2] 改造 App.tsx 数据初始化逻辑 — 登录成功后调用 GET /api/persons 和 GET /api/transactions 加载数据（替代 localStorage 读取），将返回数据设置到 people 和 transactions state
-- [ ] T018 [US2] 改造 App.tsx 家庭成员操作 — 添加成员时调用 POST /api/persons，编辑成员时调用 PUT /api/persons/[id]，删除成员时调用 DELETE /api/persons/[id]（替代直接修改 state + localStorage）
-- [ ] T019 [US2] 改造 App.tsx 余额操作 — 点击"应用"按钮时调用 POST /api/transactions 创建交易记录并调用 PUT /api/persons/[id] 更新余额，清空余额同理（+1/-1/+10/-10 按钮仅修改本地 adjustmentAmount state，不触发 API 调用）
-- [ ] T020 [US2] 移除 App.tsx 中所有 localStorage 读写逻辑（wallet_people, wallet_txs），改为完全依赖 API 数据
+- [x] T017 [US2] 改造 App.tsx 数据初始化逻辑 — 登录成功后调用 GET /api/persons 和 GET /api/transactions 加载数据（替代 localStorage 读取），将返回数据设置到 people 和 transactions state
+- [x] T018 [US2] 改造 App.tsx 家庭成员操作 — 添加成员时调用 POST /api/persons，编辑成员时调用 PUT /api/persons/[id]，删除成员时调用 DELETE /api/persons/[id]（替代直接修改 state + localStorage）
+- [x] T019 [US2] 改造 App.tsx 余额操作 — 点击"应用"按钮时调用 POST /api/transactions 创建交易记录并调用 PUT /api/persons/[id] 更新余额，清空余额同理（+1/-1/+10/-10 按钮仅修改本地 adjustmentAmount state，不触发 API 调用）
+- [x] T020 [US2] 移除 App.tsx 中所有 localStorage 读写逻辑（wallet_people, wallet_txs），改为完全依赖 API 数据
 
 **检查点**: 所有数据通过 API 持久化到云端数据库，localStorage 不再使用
 
@@ -89,8 +89,8 @@
 
 **独立测试**: 点击退出 → 回到登录页 → 直接访问主页被拦截到登录页
 
-- [ ] T021 [US3] 在 App.tsx 设置页面或底部标签栏添加"退出登录"按钮，点击后清除 localStorage 中的 token、重置 user state 为 null，显示登录页面
-- [ ] T022 [US3] 确保 App.tsx 认证状态检查覆盖所有入口 — 无 token 或 /api/auth/me 返回 401 时强制显示登录页
+- [x] T021 [US3] 在 App.tsx 设置页面或底部标签栏添加"退出登录"按钮，点击后清除 localStorage 中的 token、重置 user state 为 null，显示登录页面
+- [x] T022 [US3] 确保 App.tsx 认证状态检查覆盖所有入口 — 无 token 或 /api/auth/me 返回 401 时强制显示登录页
 
 **检查点**: 退出登录功能完整，未登录无法访问数据
 
@@ -104,14 +104,14 @@
 
 ### 后端实现
 
-- [ ] T023 [P] [US4] 实现 GET /api/admin/users 端点 in api/admin/users.ts — 验证 JWT 且 isAdmin=true，返回所有用户列表（id, username, isAdmin, createdAt），非管理员返回 403（参见 contracts/api.md 管理员接口）
-- [ ] T024 [P] [US4] 实现 DELETE /api/admin/users/[id] 端点 in api/admin/users/[id].ts — 验证管理员权限，删除用户（级联删除所有数据），返回 204（参见 contracts/api.md）
-- [ ] T025 [P] [US4] 实现 POST /api/admin/reset-password 端点 in api/admin/reset-password.ts — 验证管理员权限，生成随机新密码，bcryptjs 哈希后更新 users 表，返回明文新密码给管理员（参见 contracts/api.md）
+- [x] T023 [P] [US4] 实现 GET /api/admin/users 端点 in api/admin/users.ts — 验证 JWT 且 isAdmin=true，返回所有用户列表（id, username, isAdmin, createdAt），非管理员返回 403（参见 contracts/api.md 管理员接口）
+- [x] T024 [P] [US4] 实现 DELETE /api/admin/users/[id] 端点 in api/admin/users/[id].ts — 验证管理员权限，删除用户（级联删除所有数据），返回 204（参见 contracts/api.md）
+- [x] T025 [P] [US4] 实现 POST /api/admin/reset-password 端点 in api/admin/reset-password.ts — 验证管理员权限，生成随机新密码，bcryptjs 哈希后更新 users 表，返回明文新密码给管理员（参见 contracts/api.md）
 
 ### 前端实现
 
-- [ ] T026 [US4] 在 App.tsx 中创建管理员页面 UI（保持 iOS 风格） — 用户列表展示（用户名、注册时间）、每行有"重置密码"和"删除"按钮、重置后弹窗显示新密码、删除前确认弹窗
-- [ ] T027 [US4] 在 App.tsx 中添加管理员入口 — 仅当 user.isAdmin=true 时在设置页面或底部标签栏显示"管理"按钮，点击切换到管理员页面，普通用户不可见
+- [x] T026 [US4] 在 App.tsx 中创建管理员页面 UI（保持 iOS 风格） — 用户列表展示（用户名、注册时间）、每行有"重置密码"和"删除"按钮、重置后弹窗显示新密码、删除前确认弹窗
+- [x] T027 [US4] 在 App.tsx 中添加管理员入口 — 仅当 user.isAdmin=true 时在设置页面或底部标签栏显示"管理"按钮，点击切换到管理员页面，普通用户不可见
 
 **检查点**: 管理员功能完整，权限隔离正确
 
@@ -121,7 +121,7 @@
 
 **目的**: 整体验证和生产部署
 
-- [ ] T028 按 quickstart.md 验证清单逐项验证所有功能（注册、登录、数据同步、退出、管理员）
+- [x] T028 按 quickstart.md 验证清单逐项验证所有功能（注册、登录、数据同步、退出、管理员）
 - [ ] T029 部署到 Vercel 并验证生产环境功能正常（vercel --prod）
 
 ---
