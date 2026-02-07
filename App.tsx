@@ -293,8 +293,12 @@ const App: React.FC = () => {
   const [dataLoading, setDataLoading] = useState(false);
 
   // --- UI 状态 ---
-  const [past, setPast] = useState<Person[][]>([]);
-  const [future, setFuture] = useState<Person[][]>([]);
+  const [past, setPast] = useState<Person[][]>(() => {
+    try { return JSON.parse(sessionStorage.getItem('undo_past') || '[]'); } catch { return []; }
+  });
+  const [future, setFuture] = useState<Person[][]>(() => {
+    try { return JSON.parse(sessionStorage.getItem('undo_future') || '[]'); } catch { return []; }
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -383,29 +387,57 @@ const App: React.FC = () => {
     [transactions, activePersonId]
   );
 
-  // --- Undo/Redo（纯前端）---
+  // --- 持久化 Undo/Redo 历史 ---
+  useEffect(() => {
+    sessionStorage.setItem('undo_past', JSON.stringify(past));
+  }, [past]);
+  useEffect(() => {
+    sessionStorage.setItem('undo_future', JSON.stringify(future));
+  }, [future]);
+
+  // --- Undo/Redo（同步数据库）---
   const recordState = useCallback(() => {
     setPast(prev => [...prev, JSON.parse(JSON.stringify(people))]);
     setFuture([]);
   }, [people]);
 
-  const undo = () => {
+  const syncBalances = async (target: Person[]) => {
+    const updates = target.filter(tp => {
+      const cp = people.find(p => p.id === tp.id);
+      return cp && cp.balance !== tp.balance;
+    });
+    await Promise.all(updates.map(p =>
+      api.put(`/api/persons/${p.id}`, { balance: p.balance })
+    ));
+  };
+
+  const undo = async () => {
     if (past.length > 0) {
       const previous = past[past.length - 1];
       const current = JSON.parse(JSON.stringify(people));
-      setPast(prev => prev.slice(0, -1));
-      setFuture(prev => [current, ...prev]);
-      setPeople(previous);
+      try {
+        await syncBalances(previous);
+        setPast(prev => prev.slice(0, -1));
+        setFuture(prev => [current, ...prev]);
+        setPeople(previous);
+      } catch (err: any) {
+        alert('撤销失败: ' + err.message);
+      }
     }
   };
 
-  const redo = () => {
+  const redo = async () => {
     if (future.length > 0) {
       const next = future[0];
       const current = JSON.parse(JSON.stringify(people));
-      setFuture(prev => prev.slice(1));
-      setPast(prev => [...prev, current]);
-      setPeople(next);
+      try {
+        await syncBalances(next);
+        setFuture(prev => prev.slice(1));
+        setPast(prev => [...prev, current]);
+        setPeople(next);
+      } catch (err: any) {
+        alert('重做失败: ' + err.message);
+      }
     }
   };
 
