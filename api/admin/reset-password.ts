@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import bcrypt from 'bcryptjs';
-import { sql, ensureTables } from '../../lib/db';
-import { authenticate } from '../../lib/auth';
+import { sql, ensureTables } from '../../lib/db.js';
+import { authenticate } from '../../lib/auth.js';
 
 // 生成 8 位随机密码
 function generatePassword(): string {

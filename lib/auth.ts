@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import type { VercelRequest } from '@vercel/node';
-import type { JwtPayload } from '../types';
+import type { JwtPayload } from '../types.js';
 
 const getSecret = () => new TextEncoder().encode(process.env.JWT_SECRET);
 

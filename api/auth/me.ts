@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticate } from '../../lib/auth';
-import { ensureTables } from '../../lib/db';
+import { authenticate } from '../../lib/auth.js';
+import { ensureTables } from '../../lib/db.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
