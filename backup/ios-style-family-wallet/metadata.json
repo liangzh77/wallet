@@ -1,0 +1,5 @@
+{
+  "name": "iOS Style Family Wallet",
+  "description": "A sleek, Apple-inspired mobile application for managing multiple users' cash balances, daily wages, and transaction history with undo/redo capabilities.",
+  "requestFramePermissions": []
+}
