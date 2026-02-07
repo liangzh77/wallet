@@ -446,7 +446,6 @@ const App: React.FC = () => {
         createdAt: txData.createdAt,
         description: txData.description,
       }, ...prev]);
-      setAdjustmentAmount(0);
     } catch (err: any) {
       alert('操作失败: ' + err.message);
     }
