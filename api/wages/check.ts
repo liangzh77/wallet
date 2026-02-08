@@ -17,14 +17,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 获取今天的日期（Asia/Shanghai 时区，YYYY-MM-DD 格式）
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
 
-    // 日薪发放等同于新操作，清除所有已撤销的交易
-    await sql`
-      DELETE FROM transactions
-      WHERE undone = true AND person_id IN (
-        SELECT id FROM persons WHERE user_id = ${user.userId}
-      )
-    `;
-
     // 查询该用户所有成员
     const persons = await sql`
       SELECT id, daily_wage, balance, last_wage_date
@@ -64,6 +56,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const totalWage = diffDays * dailyWage;
       const newBalance = Number(person.balance) + totalWage;
       const description = `日薪发放（${diffDays}天 × ¥${dailyWage}）`;
+
+      // 首次发放时，清除所有已撤销的交易（日薪发放等同于新操作）
+      if (payments.length === 0) {
+        await sql`
+          DELETE FROM transactions
+          WHERE undone = true AND person_id IN (
+            SELECT id FROM persons WHERE user_id = ${user.userId}
+          )
+        `;
+      }
 
       // 更新余额和 last_wage_date，插入交易记录
       await sql`UPDATE persons SET balance = ${newBalance}, last_wage_date = ${today} WHERE id = ${person.id}`;
