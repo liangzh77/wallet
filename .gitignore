@@ -25,3 +25,6 @@ dist-ssr
 Thumbs.db
 *.tmp
 .vercel
+
+.vercel
+.env*.local
