@@ -14,6 +14,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: '未登录' });
     }
 
+    const { action } = req.body || {};
+    if (action !== 'undo' && action !== 'redo') {
+      return res.status(400).json({ error: 'action 必须是 undo 或 redo' });
+    }
+
+    if (action === 'undo') {
+      // 找到最新的活跃交易
+      const txResult = await sql`
+        SELECT t.id, t.person_id AS "personId", t.type, t.amount
+        FROM transactions t
+        JOIN persons p ON t.person_id = p.id
+        WHERE p.user_id = ${user.userId} AND t.undone = false
+        ORDER BY t.created_at DESC
+        LIMIT 1
+      `;
+
+      if (txResult.rows.length === 0) {
+        return res.status(400).json({ error: '没有可撤销的操作' });
+      }
+
+      const tx = txResult.rows[0];
+      const amount = Number(tx.amount);
+
+      const personResult = await sql`SELECT balance FROM persons WHERE id = ${tx.personId}`;
+      const currentBalance = Number(personResult.rows[0].balance);
+
+      // 计算撤销后的余额
+      let newBalance: number;
+      switch (tx.type) {
+        case 'add':
+        case 'daily_wage':
+          newBalance = currentBalance - amount;
+          break;
+        case 'subtract':
+          newBalance = currentBalance + amount;
+          break;
+        case 'clear':
+          newBalance = amount; // amount 存储了清空前的余额
+          break;
+        default:
+          newBalance = currentBalance;
+      }
+
+      await sql`UPDATE transactions SET undone = true WHERE id = ${tx.id}`;
+      await sql`UPDATE persons SET balance = ${newBalance} WHERE id = ${tx.personId}`;
+
+      return res.status(200).json({ personId: tx.personId });
+    }
+
+    // action === 'redo'
     // 找到最早的已撤销交易
     const txResult = await sql`
       SELECT t.id, t.person_id AS "personId", t.type, t.amount
@@ -31,7 +81,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const tx = txResult.rows[0];
     const amount = Number(tx.amount);
 
-    // 获取当前余额
     const personResult = await sql`SELECT balance FROM persons WHERE id = ${tx.personId}`;
     const currentBalance = Number(personResult.rows[0].balance);
 
@@ -52,13 +101,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         newBalance = currentBalance;
     }
 
-    // 标记为活跃，更新余额
     await sql`UPDATE transactions SET undone = false WHERE id = ${tx.id}`;
     await sql`UPDATE persons SET balance = ${newBalance} WHERE id = ${tx.personId}`;
 
     return res.status(200).json({ personId: tx.personId });
   } catch (err) {
-    console.error('重做操作错误:', err);
+    console.error('撤销/重做操作错误:', err);
     return res.status(500).json({ error: '服务器错误' });
   }
 }

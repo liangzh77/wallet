@@ -432,7 +432,7 @@ const App: React.FC = () => {
     if (transactions.length === 0 || undoRedoLoading) return;
     setUndoRedoLoading(true);
     try {
-      await api.post('/api/undo', {});
+      await api.post('/api/undo-redo', { action: 'undo' });
       await refreshData();
     } catch (err: any) {
       alert('撤销失败: ' + err.message);
@@ -445,7 +445,7 @@ const App: React.FC = () => {
     if (!hasUndone || undoRedoLoading) return;
     setUndoRedoLoading(true);
     try {
-      await api.post('/api/redo', {});
+      await api.post('/api/undo-redo', { action: 'redo' });
       await refreshData();
     } catch (err: any) {
       alert('重做失败: ' + err.message);
