@@ -747,12 +747,12 @@ const App: React.FC = () => {
 
       {/* --- Top Navbar (Switcher) --- */}
       <div className="pt-12 px-4 pb-3 bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-gray-100 shadow-sm">
-        <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+        <div className="flex gap-2 py-1">
           {people.map(p => (
             <button
               key={p.id}
               onClick={() => setActivePersonId(p.id)}
-              className={`px-5 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all duration-200 border-2 ${
+              className={`flex-1 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all duration-200 border-2 ${
                 activePersonId === p.id
                   ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100 scale-105'
                   : 'bg-white text-gray-400 border-transparent hover:bg-gray-50 active:scale-95'
