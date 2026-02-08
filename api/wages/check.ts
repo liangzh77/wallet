@@ -17,6 +17,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 获取今天的日期（Asia/Shanghai 时区，YYYY-MM-DD 格式）
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
 
+    // 日薪发放等同于新操作，清除所有已撤销的交易
+    await sql`
+      DELETE FROM transactions
+      WHERE undone = true AND person_id IN (
+        SELECT id FROM persons WHERE user_id = ${user.userId}
+      )
+    `;
+
     // 查询该用户所有成员
     const persons = await sql`
       SELECT id, daily_wage, balance, last_wage_date

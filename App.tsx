@@ -292,10 +292,11 @@ const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
 
+  // --- Undo/Redo 状态（持久化到数据库） ---
+  const [hasUndone, setHasUndone] = useState(false);
+  const [undoRedoLoading, setUndoRedoLoading] = useState(false);
+
   // --- UI 状态 ---
-  const [past, setPast] = useState<Person[][]>([]);
-  const [future, setFuture] = useState<Person[][]>([]);
-  const [undoneTransactions, setUndoneTransactions] = useState<Transaction[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -321,31 +322,6 @@ const App: React.FC = () => {
       .finally(() => setAuthLoading(false));
   }, []);
 
-  // --- 从交易记录构建 undo 历史栈 ---
-  const buildPastStack = (currentPeople: Person[], txs: Transaction[]): Person[][] => {
-    if (currentPeople.length === 0 || txs.length === 0) return [];
-    const sorted = [...txs].sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    const stack: Person[][] = [];
-    let state = currentPeople.map(p => ({ ...p }));
-    for (const tx of sorted) {
-      const prevState = state.map(p => {
-        if (p.id !== tx.personId) return { ...p };
-        let prevBalance = p.balance;
-        switch (tx.type) {
-          case 'add': case 'daily_wage': prevBalance = p.balance - tx.amount; break;
-          case 'subtract': prevBalance = p.balance + tx.amount; break;
-          case 'clear': prevBalance = tx.amount; break; // amount 存储了清空前的余额
-        }
-        return { ...p, balance: prevBalance };
-      });
-      stack.push(prevState);
-      state = prevState.map(p => ({ ...p }));
-    }
-    return stack;
-  };
-
   // --- 映射函数 ---
   const mapPerson = (p: any): Person => ({
     id: p.id,
@@ -364,30 +340,41 @@ const App: React.FC = () => {
     description: t.description,
   });
 
+  // --- 轻量刷新：仅加载 persons + transactions（undo/redo 后调用）---
+  const refreshData = useCallback(async () => {
+    const [personsData, txResult] = await Promise.all([
+      api.get('/api/persons'),
+      api.get('/api/transactions?personId=all'),
+    ]);
+    setPeople(personsData.map(mapPerson));
+    setTransactions(txResult.transactions.map(mapTransaction));
+    setHasUndone(txResult.hasUndone);
+  }, []);
+
   // --- 登录成功后加载数据 ---
   const loadData = useCallback(async () => {
     setDataLoading(true);
     try {
-      const [personsData, txData] = await Promise.all([
+      const [personsData, txResult] = await Promise.all([
         api.get('/api/persons'),
         api.get('/api/transactions?personId=all'),
       ]);
 
       let loadedPeople = personsData.map(mapPerson);
-      let loadedTransactions = txData.map(mapTransaction);
+      let loadedTransactions = txResult.transactions.map(mapTransaction);
+      let loadedHasUndone = txResult.hasUndone;
 
       // 检查并发放日薪
       try {
         const wageResult = await api.post('/api/wages/check', {});
         if (wageResult.payments && wageResult.payments.length > 0) {
-          // 有日薪发放，重新加载数据
           const [freshPersons, freshTx] = await Promise.all([
             api.get('/api/persons'),
             api.get('/api/transactions?personId=all'),
           ]);
           loadedPeople = freshPersons.map(mapPerson);
-          loadedTransactions = freshTx.map(mapTransaction);
-          // 显示日薪发放通知
+          loadedTransactions = freshTx.transactions.map(mapTransaction);
+          loadedHasUndone = freshTx.hasUndone;
           const totalAmount = wageResult.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
           setWageNotification(`已自动发放日薪 ¥${totalAmount}`);
           setTimeout(() => setWageNotification(null), 3000);
@@ -398,9 +385,7 @@ const App: React.FC = () => {
 
       setPeople(loadedPeople);
       setTransactions(loadedTransactions);
-      setPast(buildPastStack(loadedPeople, loadedTransactions));
-      setFuture([]);
-      setUndoneTransactions([]);
+      setHasUndone(loadedHasUndone);
       if (loadedPeople.length > 0) {
         setActivePersonId(loadedPeople[0].id);
       }
@@ -427,8 +412,7 @@ const App: React.FC = () => {
     setUser(null);
     setPeople([]);
     setTransactions([]);
-    setPast([]);
-    setFuture([]);
+    setHasUndone(false);
     setIsSettingsOpen(false);
     setIsAdminOpen(false);
   };
@@ -442,69 +426,31 @@ const App: React.FC = () => {
     [transactions, activePersonId]
   );
 
-  // --- Undo/Redo（基于交易记录）---
+  // --- Undo/Redo（持久化到数据库）---
 
   const undo = async () => {
-    if (past.length === 0 || transactions.length === 0) return;
-    // 找到最新的交易（要撤销的）
-    const sorted = [...transactions].sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    const lastTx = sorted[0];
-    const previous = past[0]; // past[0] 是撤销最新交易后的状态
-
+    if (transactions.length === 0 || undoRedoLoading) return;
+    setUndoRedoLoading(true);
     try {
-      // 更新余额到之前的状态
-      const person = previous.find(p => p.id === lastTx.personId);
-      if (person) {
-        await api.put(`/api/persons/${lastTx.personId}`, { balance: person.balance });
-      }
-      // 删除这条交易记录
-      await api.del(`/api/transactions/${lastTx.id}`);
-
-      setPast(prev => prev.slice(1));
-      setFuture(prev => [people.map(p => ({ ...p })), ...prev]);
-      setUndoneTransactions(prev => [lastTx, ...prev]);
-      setPeople(previous);
-      setTransactions(prev => prev.filter(t => t.id !== lastTx.id));
+      await api.post('/api/undo', {});
+      await refreshData();
     } catch (err: any) {
       alert('撤销失败: ' + err.message);
+    } finally {
+      setUndoRedoLoading(false);
     }
   };
 
   const redo = async () => {
-    if (future.length === 0 || undoneTransactions.length === 0) return;
-    const txToRedo = undoneTransactions[0];
-    const nextState = future[0];
-
+    if (!hasUndone || undoRedoLoading) return;
+    setUndoRedoLoading(true);
     try {
-      // 恢复余额
-      const person = nextState.find(p => p.id === txToRedo.personId);
-      if (person) {
-        await api.put(`/api/persons/${txToRedo.personId}`, { balance: person.balance });
-      }
-      // 重建交易记录
-      const txData = await api.post('/api/transactions', {
-        personId: txToRedo.personId,
-        type: txToRedo.type,
-        amount: txToRedo.amount,
-        description: txToRedo.description,
-      });
-
-      setFuture(prev => prev.slice(1));
-      setPast(prev => [people.map(p => ({ ...p })), ...prev]);
-      setUndoneTransactions(prev => prev.slice(1));
-      setPeople(nextState);
-      setTransactions(prev => [{
-        id: txData.id,
-        personId: txData.personId,
-        type: txData.type,
-        amount: Number(txData.amount),
-        createdAt: txData.createdAt,
-        description: txData.description,
-      }, ...prev]);
+      await api.post('/api/redo', {});
+      await refreshData();
     } catch (err: any) {
       alert('重做失败: ' + err.message);
+    } finally {
+      setUndoRedoLoading(false);
     }
   };
 
@@ -517,10 +463,6 @@ const App: React.FC = () => {
   // --- 应用修改（调用 API）---
   const executeModification = async () => {
     if (!activePerson || adjustmentAmount === 0) return;
-    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
-    setFuture([]);
-    setUndoneTransactions([]);
-
     const newBalance = activePerson.balance + adjustmentAmount;
     const type = adjustmentAmount > 0 ? 'add' : 'subtract';
     const description = `${adjustmentAmount > 0 ? '增加' : '减少'}${Math.abs(adjustmentAmount)}元`;
@@ -547,6 +489,7 @@ const App: React.FC = () => {
         createdAt: txData.createdAt,
         description: txData.description,
       }, ...prev]);
+      setHasUndone(false);
     } catch (err: any) {
       alert('操作失败: ' + err.message);
     }
@@ -555,9 +498,6 @@ const App: React.FC = () => {
   // --- 清空余额（调用 API）---
   const clearBalance = async () => {
     if (!activePerson) return;
-    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
-    setFuture([]);
-    setUndoneTransactions([]);
 
     try {
       const [, txData] = await Promise.all([
@@ -581,6 +521,7 @@ const App: React.FC = () => {
         createdAt: txData.createdAt,
         description: txData.description,
       }, ...prev]);
+      setHasUndone(false);
     } catch (err: any) {
       alert('操作失败: ' + err.message);
     }
@@ -589,10 +530,6 @@ const App: React.FC = () => {
   // --- 添加家庭成员（调用 API）---
   const handleAddPerson = async () => {
     if (!newName.trim()) return;
-    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
-    setFuture([]);
-    setUndoneTransactions([]);
-
     try {
       const data = await api.post('/api/persons', { name: newName.trim(), dailyWage: 100 });
       const newP: Person = {
@@ -612,10 +549,6 @@ const App: React.FC = () => {
   // --- 删除家庭成员（调用 API）---
   const handleDeletePerson = async (personId: number) => {
     if (people.length <= 1) return;
-    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
-    setFuture([]);
-    setUndoneTransactions([]);
-
     try {
       await api.del(`/api/persons/${personId}`);
       setPeople(prev => prev.filter(p => p.id !== personId));
@@ -632,10 +565,6 @@ const App: React.FC = () => {
   // --- 保存编辑（调用 API）---
   const handleSaveEdit = async () => {
     if (!editingPerson) return;
-    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
-    setFuture([]);
-    setUndoneTransactions([]);
-
     try {
       await api.put(`/api/persons/${editingPerson.id}`, {
         name: editingPerson.name,
@@ -960,18 +889,18 @@ const App: React.FC = () => {
 
       {/* --- Tab Bar --- */}
       <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 px-6 py-4 flex justify-between items-center z-40 pb-safe-area-inset-bottom shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
-        <button onClick={undo} disabled={past.length === 0} className="flex flex-col items-center gap-1 group">
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${past.length > 0 ? 'bg-gray-50 text-blue-600 ios-btn-active' : 'text-gray-200'}`}>
+        <button onClick={undo} disabled={transactions.length === 0 || undoRedoLoading} className="flex flex-col items-center gap-1 group">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${transactions.length > 0 && !undoRedoLoading ? 'bg-gray-50 text-blue-600 ios-btn-active' : 'text-gray-200'}`}>
             <i className="fa-solid fa-arrow-rotate-left text-xl"></i>
           </div>
-          <span className={`text-[10px] font-black ${past.length > 0 ? 'text-gray-500' : 'text-gray-200'}`}>后退</span>
+          <span className={`text-[10px] font-black ${transactions.length > 0 && !undoRedoLoading ? 'text-gray-500' : 'text-gray-200'}`}>后退</span>
         </button>
 
-        <button onClick={redo} disabled={future.length === 0} className="flex flex-col items-center gap-1 group">
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${future.length > 0 ? 'bg-gray-50 text-blue-600 ios-btn-active' : 'text-gray-200'}`}>
+        <button onClick={redo} disabled={!hasUndone || undoRedoLoading} className="flex flex-col items-center gap-1 group">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${hasUndone && !undoRedoLoading ? 'bg-gray-50 text-blue-600 ios-btn-active' : 'text-gray-200'}`}>
             <i className="fa-solid fa-arrow-rotate-right text-xl"></i>
           </div>
-          <span className={`text-[10px] font-black ${future.length > 0 ? 'text-gray-500' : 'text-gray-200'}`}>前进</span>
+          <span className={`text-[10px] font-black ${hasUndone && !undoRedoLoading ? 'text-gray-500' : 'text-gray-200'}`}>前进</span>
         </button>
 
         <button onClick={() => setIsClearModalOpen(true)} className="flex flex-col items-center gap-1 group">

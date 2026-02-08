@@ -13,16 +13,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const { personId } = req.query;
 
-      // 支持 personId=all 查询所有成员的交易记录
+      // 支持 personId=all 查询所有成员的交易记录（仅活跃交易 + 是否有可重做的）
       if (personId === 'all') {
-        const result = await sql`
-          SELECT t.id, t.person_id AS "personId", t.type, t.amount, t.description, t.created_at AS "createdAt"
-          FROM transactions t
-          JOIN persons p ON t.person_id = p.id
-          WHERE p.user_id = ${user.userId}
-          ORDER BY t.created_at DESC
-        `;
-        return res.status(200).json(result.rows);
+        const [txResult, undoneResult] = await Promise.all([
+          sql`
+            SELECT t.id, t.person_id AS "personId", t.type, t.amount, t.description, t.created_at AS "createdAt"
+            FROM transactions t
+            JOIN persons p ON t.person_id = p.id
+            WHERE p.user_id = ${user.userId} AND t.undone = false
+            ORDER BY t.created_at DESC
+          `,
+          sql`
+            SELECT EXISTS(
+              SELECT 1 FROM transactions t
+              JOIN persons p ON t.person_id = p.id
+              WHERE p.user_id = ${user.userId} AND t.undone = true
+            ) AS "hasUndone"
+          `,
+        ]);
+        return res.status(200).json({
+          transactions: txResult.rows,
+          hasUndone: undoneResult.rows[0].hasUndone,
+        });
       }
 
       if (!personId) {
@@ -40,7 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const result = await sql`
         SELECT id, person_id AS "personId", type, amount, description, created_at AS "createdAt"
         FROM transactions
-        WHERE person_id = ${Number(personId)}
+        WHERE person_id = ${Number(personId)} AND undone = false
         ORDER BY created_at DESC
       `;
       return res.status(200).json(result.rows);
@@ -60,6 +72,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (check.rows.length === 0) {
         return res.status(404).json({ error: '成员不存在' });
       }
+
+      // 新操作前，清除所有已撤销的交易（等同于新操作丢弃 redo 栈）
+      await sql`
+        DELETE FROM transactions
+        WHERE undone = true AND person_id IN (
+          SELECT id FROM persons WHERE user_id = ${user.userId}
+        )
+      `;
 
       const result = await sql`
         INSERT INTO transactions (person_id, type, amount, description)
