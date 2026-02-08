@@ -31,6 +31,7 @@ export async function ensureTables() {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE persons ADD COLUMN IF NOT EXISTS last_wage_date DATE`;
   await sql`CREATE INDEX IF NOT EXISTS idx_persons_user_id ON persons(user_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_transactions_person_id ON transactions(person_id)`;
 }

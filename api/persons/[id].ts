@@ -41,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (balance !== undefined) await sql`UPDATE persons SET balance = ${balance} WHERE id = ${personId}`;
 
       const result = await sql`
-        SELECT id, name, daily_wage AS "dailyWage", balance, created_at AS "createdAt"
+        SELECT id, name, daily_wage AS "dailyWage", balance, last_wage_date AS "lastWageDate", created_at AS "createdAt"
         FROM persons WHERE id = ${personId}
       `;
       return res.status(200).json(result.rows[0]);

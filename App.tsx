@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Person, Transaction, User } from './types';
 import { useLongPress } from './hooks/useLongPress';
 
@@ -296,13 +296,13 @@ const App: React.FC = () => {
   const [past, setPast] = useState<Person[][]>([]);
   const [future, setFuture] = useState<Person[][]>([]);
   const [undoneTransactions, setUndoneTransactions] = useState<Transaction[]>([]);
-  const isUndoRedoing = useRef(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
+  const [wageNotification, setWageNotification] = useState<string | null>(null);
 
   // --- 初始化: 检查已有 token ---
   useEffect(() => {
@@ -321,6 +321,49 @@ const App: React.FC = () => {
       .finally(() => setAuthLoading(false));
   }, []);
 
+  // --- 从交易记录构建 undo 历史栈 ---
+  const buildPastStack = (currentPeople: Person[], txs: Transaction[]): Person[][] => {
+    if (currentPeople.length === 0 || txs.length === 0) return [];
+    const sorted = [...txs].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    const stack: Person[][] = [];
+    let state = currentPeople.map(p => ({ ...p }));
+    for (const tx of sorted) {
+      const prevState = state.map(p => {
+        if (p.id !== tx.personId) return { ...p };
+        let prevBalance = p.balance;
+        switch (tx.type) {
+          case 'add': case 'daily_wage': prevBalance = p.balance - tx.amount; break;
+          case 'subtract': prevBalance = p.balance + tx.amount; break;
+          case 'clear': prevBalance = tx.amount; break; // amount 存储了清空前的余额
+        }
+        return { ...p, balance: prevBalance };
+      });
+      stack.push(prevState);
+      state = prevState.map(p => ({ ...p }));
+    }
+    return stack;
+  };
+
+  // --- 映射函数 ---
+  const mapPerson = (p: any): Person => ({
+    id: p.id,
+    name: p.name,
+    balance: Number(p.balance),
+    dailyWage: Number(p.dailyWage),
+    lastWageDate: p.lastWageDate || null,
+    createdAt: p.createdAt,
+  });
+  const mapTransaction = (t: any): Transaction => ({
+    id: t.id,
+    personId: t.personId,
+    type: t.type,
+    amount: Number(t.amount),
+    createdAt: t.createdAt,
+    description: t.description,
+  });
+
   // --- 登录成功后加载数据 ---
   const loadData = useCallback(async () => {
     setDataLoading(true);
@@ -329,23 +372,37 @@ const App: React.FC = () => {
         api.get('/api/persons'),
         api.get('/api/transactions?personId=all'),
       ]);
-      setPeople(personsData.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        balance: Number(p.balance),
-        dailyWage: Number(p.dailyWage),
-        createdAt: p.createdAt,
-      })));
-      setTransactions(txData.map((t: any) => ({
-        id: t.id,
-        personId: t.personId,
-        type: t.type,
-        amount: Number(t.amount),
-        createdAt: t.createdAt,
-        description: t.description,
-      })));
-      if (personsData.length > 0) {
-        setActivePersonId(personsData[0].id);
+
+      let loadedPeople = personsData.map(mapPerson);
+      let loadedTransactions = txData.map(mapTransaction);
+
+      // 检查并发放日薪
+      try {
+        const wageResult = await api.post('/api/wages/check', {});
+        if (wageResult.payments && wageResult.payments.length > 0) {
+          // 有日薪发放，重新加载数据
+          const [freshPersons, freshTx] = await Promise.all([
+            api.get('/api/persons'),
+            api.get('/api/transactions?personId=all'),
+          ]);
+          loadedPeople = freshPersons.map(mapPerson);
+          loadedTransactions = freshTx.map(mapTransaction);
+          // 显示日薪发放通知
+          const totalAmount = wageResult.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+          setWageNotification(`已自动发放日薪 ¥${totalAmount}`);
+          setTimeout(() => setWageNotification(null), 3000);
+        }
+      } catch (err) {
+        console.error('日薪检查失败:', err);
+      }
+
+      setPeople(loadedPeople);
+      setTransactions(loadedTransactions);
+      setPast(buildPastStack(loadedPeople, loadedTransactions));
+      setFuture([]);
+      setUndoneTransactions([]);
+      if (loadedPeople.length > 0) {
+        setActivePersonId(loadedPeople[0].id);
       }
     } catch (err: any) {
       console.error('加载数据失败:', err);
@@ -385,45 +442,7 @@ const App: React.FC = () => {
     [transactions, activePersonId]
   );
 
-  // --- 从交易记录构建 undo 历史 ---
-  useEffect(() => {
-    // 撤销/重做操作引起的 transactions 变化，不重建历史栈
-    if (isUndoRedoing.current) {
-      isUndoRedoing.current = false;
-      return;
-    }
-    if (people.length === 0 || transactions.length === 0) return;
-    // 按时间倒序排列所有交易（最新在前）
-    const sorted = [...transactions].sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    const stack: Person[][] = [];
-    let state = people.map(p => ({ ...p }));
-    for (const tx of sorted) {
-      const prevState = state.map(p => {
-        if (p.id !== tx.personId) return { ...p };
-        let prevBalance = p.balance;
-        switch (tx.type) {
-          case 'add': case 'daily_wage': prevBalance = p.balance - tx.amount; break;
-          case 'subtract': prevBalance = p.balance + tx.amount; break;
-          case 'clear': prevBalance = tx.amount; break; // amount 存储了清空前的余额
-        }
-        return { ...p, balance: prevBalance };
-      });
-      stack.push(prevState);
-      state = prevState.map(p => ({ ...p }));
-    }
-    setPast(stack);
-    setFuture([]);
-    setUndoneTransactions([]);
-  }, [transactions.length, people.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // --- Undo/Redo（基于交易记录）---
-  const recordState = useCallback(() => {
-    // 新操作时清空 redo 栈
-    setFuture([]);
-    setUndoneTransactions([]);
-  }, []);
 
   const undo = async () => {
     if (past.length === 0 || transactions.length === 0) return;
@@ -443,7 +462,6 @@ const App: React.FC = () => {
       // 删除这条交易记录
       await api.del(`/api/transactions/${lastTx.id}`);
 
-      isUndoRedoing.current = true;
       setPast(prev => prev.slice(1));
       setFuture(prev => [people.map(p => ({ ...p })), ...prev]);
       setUndoneTransactions(prev => [lastTx, ...prev]);
@@ -473,7 +491,6 @@ const App: React.FC = () => {
         description: txToRedo.description,
       });
 
-      isUndoRedoing.current = true;
       setFuture(prev => prev.slice(1));
       setPast(prev => [people.map(p => ({ ...p })), ...prev]);
       setUndoneTransactions(prev => prev.slice(1));
@@ -500,7 +517,9 @@ const App: React.FC = () => {
   // --- 应用修改（调用 API）---
   const executeModification = async () => {
     if (!activePerson || adjustmentAmount === 0) return;
-    recordState();
+    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
+    setFuture([]);
+    setUndoneTransactions([]);
 
     const newBalance = activePerson.balance + adjustmentAmount;
     const type = adjustmentAmount > 0 ? 'add' : 'subtract';
@@ -536,7 +555,9 @@ const App: React.FC = () => {
   // --- 清空余额（调用 API）---
   const clearBalance = async () => {
     if (!activePerson) return;
-    recordState();
+    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
+    setFuture([]);
+    setUndoneTransactions([]);
 
     try {
       const [, txData] = await Promise.all([
@@ -568,7 +589,9 @@ const App: React.FC = () => {
   // --- 添加家庭成员（调用 API）---
   const handleAddPerson = async () => {
     if (!newName.trim()) return;
-    recordState();
+    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
+    setFuture([]);
+    setUndoneTransactions([]);
 
     try {
       const data = await api.post('/api/persons', { name: newName.trim(), dailyWage: 100 });
@@ -589,7 +612,9 @@ const App: React.FC = () => {
   // --- 删除家庭成员（调用 API）---
   const handleDeletePerson = async (personId: number) => {
     if (people.length <= 1) return;
-    recordState();
+    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
+    setFuture([]);
+    setUndoneTransactions([]);
 
     try {
       await api.del(`/api/persons/${personId}`);
@@ -607,7 +632,9 @@ const App: React.FC = () => {
   // --- 保存编辑（调用 API）---
   const handleSaveEdit = async () => {
     if (!editingPerson) return;
-    recordState();
+    setPast(prev => [people.map(p => ({ ...p })), ...prev]);
+    setFuture([]);
+    setUndoneTransactions([]);
 
     try {
       await api.put(`/api/persons/${editingPerson.id}`, {
@@ -779,6 +806,13 @@ const App: React.FC = () => {
   // --- 主界面 ---
   return (
     <div className="flex flex-col h-screen max-w-md mx-auto relative text-[#1c1c1e] bg-[#f2f2f7] overflow-hidden">
+      {/* --- 日薪发放通知 --- */}
+      {wageNotification && (
+        <div className="fixed top-14 left-4 right-4 z-50 bg-green-500 text-white p-4 rounded-2xl text-center font-bold text-sm shadow-lg max-w-md mx-auto">
+          <i className="fa-solid fa-coins mr-2"></i>{wageNotification}
+        </div>
+      )}
+
       {/* --- Top Navbar (Switcher) --- */}
       <div className="pt-12 px-4 pb-3 bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-gray-100 shadow-sm">
         <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
@@ -896,12 +930,13 @@ const App: React.FC = () => {
                     <div key={tx.id} className="bg-white p-4 rounded-2xl flex justify-between items-center ios-shadow border border-white">
                       <div className="flex items-center gap-3">
                         <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm ${
-                          tx.type === 'add' ? 'bg-green-50 text-green-500' :
+                          tx.type === 'add' || tx.type === 'daily_wage' ? 'bg-green-50 text-green-500' :
                           tx.type === 'subtract' ? 'bg-red-50 text-red-500' :
                           'bg-gray-100 text-gray-500'
                         }`}>
                           <i className={`fa-solid ${
                             tx.type === 'add' ? 'fa-circle-plus' :
+                            tx.type === 'daily_wage' ? 'fa-coins' :
                             tx.type === 'subtract' ? 'fa-circle-minus' :
                             'fa-broom'
                           }`}></i>
@@ -911,8 +946,8 @@ const App: React.FC = () => {
                           <p className="text-[9px] text-gray-400 font-bold">{new Date(tx.createdAt).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</p>
                         </div>
                       </div>
-                      <p className={`font-black text-sm whitespace-nowrap flex-shrink-0 ${tx.type === 'add' ? 'text-green-500' : tx.type === 'subtract' ? 'text-red-500' : 'text-gray-400'}`}>
-                        {tx.type === 'add' ? '+' : tx.type === 'subtract' ? '-' : ''}{tx.amount !== 0 ? `¥${tx.amount}` : ''}
+                      <p className={`font-black text-sm whitespace-nowrap flex-shrink-0 ${tx.type === 'add' || tx.type === 'daily_wage' ? 'text-green-500' : tx.type === 'subtract' ? 'text-red-500' : 'text-gray-400'}`}>
+                        {tx.type === 'add' || tx.type === 'daily_wage' ? '+' : tx.type === 'subtract' ? '-' : ''}{tx.amount !== 0 ? `¥${tx.amount}` : ''}
                       </p>
                     </div>
                   ))

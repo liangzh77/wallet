@@ -12,7 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       const result = await sql`
-        SELECT id, name, daily_wage AS "dailyWage", balance, created_at AS "createdAt"
+        SELECT id, name, daily_wage AS "dailyWage", balance, last_wage_date AS "lastWageDate", created_at AS "createdAt"
         FROM persons
         WHERE user_id = ${user.userId}
         ORDER BY created_at ASC
@@ -29,7 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const result = await sql`
         INSERT INTO persons (user_id, name, daily_wage, balance)
         VALUES (${user.userId}, ${name}, ${dailyWage || 0}, 0)
-        RETURNING id, name, daily_wage AS "dailyWage", balance, created_at AS "createdAt"
+        RETURNING id, name, daily_wage AS "dailyWage", balance, last_wage_date AS "lastWageDate", created_at AS "createdAt"
       `;
       return res.status(201).json(result.rows[0]);
     }

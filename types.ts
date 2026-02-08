@@ -13,6 +13,7 @@ export interface Person {
   name: string;
   balance: number;
   dailyWage: number;
+  lastWageDate?: string;
   createdAt?: string;
 }
 
