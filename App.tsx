@@ -293,12 +293,9 @@ const App: React.FC = () => {
   const [dataLoading, setDataLoading] = useState(false);
 
   // --- UI 状态 ---
-  const [past, setPast] = useState<Person[][]>(() => {
-    try { return JSON.parse(sessionStorage.getItem('undo_past') || '[]'); } catch { return []; }
-  });
-  const [future, setFuture] = useState<Person[][]>(() => {
-    try { return JSON.parse(sessionStorage.getItem('undo_future') || '[]'); } catch { return []; }
-  });
+  const [past, setPast] = useState<Person[][]>([]);
+  const [future, setFuture] = useState<Person[][]>([]);
+  const [undoneTransactions, setUndoneTransactions] = useState<Transaction[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -387,57 +384,102 @@ const App: React.FC = () => {
     [transactions, activePersonId]
   );
 
-  // --- 持久化 Undo/Redo 历史 ---
+  // --- 从交易记录构建 undo 历史 ---
   useEffect(() => {
-    sessionStorage.setItem('undo_past', JSON.stringify(past));
-  }, [past]);
-  useEffect(() => {
-    sessionStorage.setItem('undo_future', JSON.stringify(future));
-  }, [future]);
-
-  // --- Undo/Redo（同步数据库）---
-  const recordState = useCallback(() => {
-    setPast(prev => [...prev, JSON.parse(JSON.stringify(people))]);
+    if (people.length === 0 || transactions.length === 0) return;
+    // 按时间倒序排列所有交易（最新在前）
+    const sorted = [...transactions].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    const stack: Person[][] = [];
+    let state = people.map(p => ({ ...p }));
+    for (const tx of sorted) {
+      const prevState = state.map(p => {
+        if (p.id !== tx.personId) return { ...p };
+        let prevBalance = p.balance;
+        switch (tx.type) {
+          case 'add': case 'daily_wage': prevBalance = p.balance - tx.amount; break;
+          case 'subtract': prevBalance = p.balance + tx.amount; break;
+          case 'clear': prevBalance = tx.amount; break; // amount 存储了清空前的余额
+        }
+        return { ...p, balance: prevBalance };
+      });
+      stack.push(prevState);
+      state = prevState.map(p => ({ ...p }));
+    }
+    setPast(stack);
     setFuture([]);
-  }, [people]);
+    setUndoneTransactions([]);
+  }, [transactions.length, people.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const syncBalances = async (target: Person[]) => {
-    const updates = target.filter(tp => {
-      const cp = people.find(p => p.id === tp.id);
-      return cp && cp.balance !== tp.balance;
-    });
-    await Promise.all(updates.map(p =>
-      api.put(`/api/persons/${p.id}`, { balance: p.balance })
-    ));
-  };
+  // --- Undo/Redo（基于交易记录）---
+  const recordState = useCallback(() => {
+    // 新操作时清空 redo 栈
+    setFuture([]);
+    setUndoneTransactions([]);
+  }, []);
 
   const undo = async () => {
-    if (past.length > 0) {
-      const previous = past[past.length - 1];
-      const current = JSON.parse(JSON.stringify(people));
-      try {
-        await syncBalances(previous);
-        setPast(prev => prev.slice(0, -1));
-        setFuture(prev => [current, ...prev]);
-        setPeople(previous);
-      } catch (err: any) {
-        alert('撤销失败: ' + err.message);
+    if (past.length === 0 || transactions.length === 0) return;
+    // 找到最新的交易（要撤销的）
+    const sorted = [...transactions].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    const lastTx = sorted[0];
+    const previous = past[0]; // past[0] 是撤销最新交易后的状态
+
+    try {
+      // 更新余额到之前的状态
+      const person = previous.find(p => p.id === lastTx.personId);
+      if (person) {
+        await api.put(`/api/persons/${lastTx.personId}`, { balance: person.balance });
       }
+      // 删除这条交易记录
+      await api.del(`/api/transactions/${lastTx.id}`);
+
+      setPast(prev => prev.slice(1));
+      setFuture(prev => [people.map(p => ({ ...p })), ...prev]);
+      setUndoneTransactions(prev => [lastTx, ...prev]);
+      setPeople(previous);
+      setTransactions(prev => prev.filter(t => t.id !== lastTx.id));
+    } catch (err: any) {
+      alert('撤销失败: ' + err.message);
     }
   };
 
   const redo = async () => {
-    if (future.length > 0) {
-      const next = future[0];
-      const current = JSON.parse(JSON.stringify(people));
-      try {
-        await syncBalances(next);
-        setFuture(prev => prev.slice(1));
-        setPast(prev => [...prev, current]);
-        setPeople(next);
-      } catch (err: any) {
-        alert('重做失败: ' + err.message);
+    if (future.length === 0 || undoneTransactions.length === 0) return;
+    const txToRedo = undoneTransactions[0];
+    const nextState = future[0];
+
+    try {
+      // 恢复余额
+      const person = nextState.find(p => p.id === txToRedo.personId);
+      if (person) {
+        await api.put(`/api/persons/${txToRedo.personId}`, { balance: person.balance });
       }
+      // 重建交易记录
+      const txData = await api.post('/api/transactions', {
+        personId: txToRedo.personId,
+        type: txToRedo.type,
+        amount: txToRedo.amount,
+        description: txToRedo.description,
+      });
+
+      setFuture(prev => prev.slice(1));
+      setPast(prev => [people.map(p => ({ ...p })), ...prev]);
+      setUndoneTransactions(prev => prev.slice(1));
+      setPeople(nextState);
+      setTransactions(prev => [{
+        id: txData.id,
+        personId: txData.personId,
+        type: txData.type,
+        amount: Number(txData.amount),
+        createdAt: txData.createdAt,
+        description: txData.description,
+      }, ...prev]);
+    } catch (err: any) {
+      alert('重做失败: ' + err.message);
     }
   };
 
@@ -494,8 +536,8 @@ const App: React.FC = () => {
         api.post('/api/transactions', {
           personId: activePersonId,
           type: 'clear',
-          amount: 0,
-          description: '清空余额',
+          amount: activePerson.balance,
+          description: `清空余额（原${activePerson.balance}元）`,
         }),
       ]);
 
