@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Person, Transaction, User } from './types';
 import { useLongPress } from './hooks/useLongPress';
 
@@ -296,6 +296,7 @@ const App: React.FC = () => {
   const [past, setPast] = useState<Person[][]>([]);
   const [future, setFuture] = useState<Person[][]>([]);
   const [undoneTransactions, setUndoneTransactions] = useState<Transaction[]>([]);
+  const isUndoRedoing = useRef(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -386,6 +387,11 @@ const App: React.FC = () => {
 
   // --- 从交易记录构建 undo 历史 ---
   useEffect(() => {
+    // 撤销/重做操作引起的 transactions 变化，不重建历史栈
+    if (isUndoRedoing.current) {
+      isUndoRedoing.current = false;
+      return;
+    }
     if (people.length === 0 || transactions.length === 0) return;
     // 按时间倒序排列所有交易（最新在前）
     const sorted = [...transactions].sort((a, b) =>
@@ -437,6 +443,7 @@ const App: React.FC = () => {
       // 删除这条交易记录
       await api.del(`/api/transactions/${lastTx.id}`);
 
+      isUndoRedoing.current = true;
       setPast(prev => prev.slice(1));
       setFuture(prev => [people.map(p => ({ ...p })), ...prev]);
       setUndoneTransactions(prev => [lastTx, ...prev]);
@@ -466,6 +473,7 @@ const App: React.FC = () => {
         description: txToRedo.description,
       });
 
+      isUndoRedoing.current = true;
       setFuture(prev => prev.slice(1));
       setPast(prev => [people.map(p => ({ ...p })), ...prev]);
       setUndoneTransactions(prev => prev.slice(1));
