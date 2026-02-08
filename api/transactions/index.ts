@@ -24,16 +24,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ORDER BY t.created_at DESC
           `,
           sql`
-            SELECT EXISTS(
-              SELECT 1 FROM transactions t
-              JOIN persons p ON t.person_id = p.id
-              WHERE p.user_id = ${user.userId} AND t.undone = true
-            ) AS "hasUndone"
+            SELECT DISTINCT t.person_id AS "personId"
+            FROM transactions t
+            JOIN persons p ON t.person_id = p.id
+            WHERE p.user_id = ${user.userId} AND t.undone = true
           `,
         ]);
         return res.status(200).json({
           transactions: txResult.rows,
-          hasUndone: undoneResult.rows[0].hasUndone,
+          undonePersonIds: undoneResult.rows.map((r: any) => r.personId),
         });
       }
 
@@ -73,12 +72,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(404).json({ error: '成员不存在' });
       }
 
-      // 新操作前，清除所有已撤销的交易（等同于新操作丢弃 redo 栈）
+      // 新操作前，清除该成员的已撤销交易（等同于新操作丢弃该成员的 redo 栈）
       await sql`
         DELETE FROM transactions
-        WHERE undone = true AND person_id IN (
-          SELECT id FROM persons WHERE user_id = ${user.userId}
-        )
+        WHERE undone = true AND person_id = ${personId}
       `;
 
       const result = await sql`

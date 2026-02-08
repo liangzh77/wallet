@@ -57,15 +57,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const newBalance = Number(person.balance) + totalWage;
       const description = `日薪发放（${diffDays}天 × ¥${dailyWage}）`;
 
-      // 首次发放时，清除所有已撤销的交易（日薪发放等同于新操作）
-      if (payments.length === 0) {
-        await sql`
-          DELETE FROM transactions
-          WHERE undone = true AND person_id IN (
-            SELECT id FROM persons WHERE user_id = ${user.userId}
-          )
-        `;
-      }
+      // 清除该成员的已撤销交易（日薪发放等同于新操作，丢弃该成员的 redo 栈）
+      await sql`
+        DELETE FROM transactions
+        WHERE undone = true AND person_id = ${person.id}
+      `;
 
       // 更新余额和 last_wage_date，插入交易记录
       await sql`UPDATE persons SET balance = ${newBalance}, last_wage_date = ${today} WHERE id = ${person.id}`;

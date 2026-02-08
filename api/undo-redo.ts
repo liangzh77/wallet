@@ -14,19 +14,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: '未登录' });
     }
 
-    const { action } = req.body || {};
+    const { action, personId } = req.body || {};
     if (action !== 'undo' && action !== 'redo') {
       return res.status(400).json({ error: 'action 必须是 undo 或 redo' });
     }
+    if (!personId) {
+      return res.status(400).json({ error: 'personId 不能为空' });
+    }
+
+    // 校验成员归属
+    const check = await sql`
+      SELECT id FROM persons WHERE id = ${personId} AND user_id = ${user.userId}
+    `;
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: '成员不存在' });
+    }
 
     if (action === 'undo') {
-      // 找到最新的活跃交易
+      // 找到该成员最新的活跃交易
       const txResult = await sql`
-        SELECT t.id, t.person_id AS "personId", t.type, t.amount
-        FROM transactions t
-        JOIN persons p ON t.person_id = p.id
-        WHERE p.user_id = ${user.userId} AND t.undone = false
-        ORDER BY t.created_at DESC
+        SELECT id, person_id AS "personId", type, amount
+        FROM transactions
+        WHERE person_id = ${personId} AND undone = false
+        ORDER BY created_at DESC
         LIMIT 1
       `;
 
@@ -37,7 +47,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const tx = txResult.rows[0];
       const amount = Number(tx.amount);
 
-      const personResult = await sql`SELECT balance FROM persons WHERE id = ${tx.personId}`;
+      const personResult = await sql`SELECT balance FROM persons WHERE id = ${personId}`;
       const currentBalance = Number(personResult.rows[0].balance);
 
       // 计算撤销后的余额
@@ -58,19 +68,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       await sql`UPDATE transactions SET undone = true WHERE id = ${tx.id}`;
-      await sql`UPDATE persons SET balance = ${newBalance} WHERE id = ${tx.personId}`;
+      await sql`UPDATE persons SET balance = ${newBalance} WHERE id = ${personId}`;
 
-      return res.status(200).json({ personId: tx.personId });
+      return res.status(200).json({ personId });
     }
 
     // action === 'redo'
-    // 找到最早的已撤销交易
+    // 找到该成员最早的已撤销交易
     const txResult = await sql`
-      SELECT t.id, t.person_id AS "personId", t.type, t.amount
-      FROM transactions t
-      JOIN persons p ON t.person_id = p.id
-      WHERE p.user_id = ${user.userId} AND t.undone = true
-      ORDER BY t.created_at ASC
+      SELECT id, person_id AS "personId", type, amount
+      FROM transactions
+      WHERE person_id = ${personId} AND undone = true
+      ORDER BY created_at ASC
       LIMIT 1
     `;
 
@@ -81,7 +90,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const tx = txResult.rows[0];
     const amount = Number(tx.amount);
 
-    const personResult = await sql`SELECT balance FROM persons WHERE id = ${tx.personId}`;
+    const personResult = await sql`SELECT balance FROM persons WHERE id = ${personId}`;
     const currentBalance = Number(personResult.rows[0].balance);
 
     // 计算重做后的余额
@@ -102,9 +111,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     await sql`UPDATE transactions SET undone = false WHERE id = ${tx.id}`;
-    await sql`UPDATE persons SET balance = ${newBalance} WHERE id = ${tx.personId}`;
+    await sql`UPDATE persons SET balance = ${newBalance} WHERE id = ${personId}`;
 
-    return res.status(200).json({ personId: tx.personId });
+    return res.status(200).json({ personId });
   } catch (err) {
     console.error('撤销/重做操作错误:', err);
     return res.status(500).json({ error: '服务器错误' });

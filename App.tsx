@@ -292,8 +292,8 @@ const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
 
-  // --- Undo/Redo 状态（持久化到数据库） ---
-  const [hasUndone, setHasUndone] = useState(false);
+  // --- Undo/Redo 状态（持久化到数据库，按成员独立） ---
+  const [undonePersonIds, setUndonePersonIds] = useState<number[]>([]);
   const [undoRedoLoading, setUndoRedoLoading] = useState(false);
 
   // --- UI 状态 ---
@@ -348,7 +348,7 @@ const App: React.FC = () => {
     ]);
     setPeople(personsData.map(mapPerson));
     setTransactions(txResult.transactions.map(mapTransaction));
-    setHasUndone(txResult.hasUndone);
+    setUndonePersonIds(txResult.undonePersonIds);
   }, []);
 
   // --- 登录成功后加载数据 ---
@@ -362,7 +362,7 @@ const App: React.FC = () => {
 
       let loadedPeople = personsData.map(mapPerson);
       let loadedTransactions = txResult.transactions.map(mapTransaction);
-      let loadedHasUndone = txResult.hasUndone;
+      let loadedUndonePersonIds = txResult.undonePersonIds;
 
       // 检查并发放日薪
       try {
@@ -374,7 +374,7 @@ const App: React.FC = () => {
           ]);
           loadedPeople = freshPersons.map(mapPerson);
           loadedTransactions = freshTx.transactions.map(mapTransaction);
-          loadedHasUndone = freshTx.hasUndone;
+          loadedUndonePersonIds = freshTx.undonePersonIds;
           const totalAmount = wageResult.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
           setWageNotification(`已自动发放日薪 ¥${totalAmount}`);
           setTimeout(() => setWageNotification(null), 3000);
@@ -385,7 +385,7 @@ const App: React.FC = () => {
 
       setPeople(loadedPeople);
       setTransactions(loadedTransactions);
-      setHasUndone(loadedHasUndone);
+      setUndonePersonIds(loadedUndonePersonIds);
       if (loadedPeople.length > 0) {
         setActivePersonId(loadedPeople[0].id);
       }
@@ -412,7 +412,7 @@ const App: React.FC = () => {
     setUser(null);
     setPeople([]);
     setTransactions([]);
-    setHasUndone(false);
+    setUndonePersonIds([]);
     setIsSettingsOpen(false);
     setIsAdminOpen(false);
   };
@@ -428,11 +428,14 @@ const App: React.FC = () => {
 
   // --- Undo/Redo（持久化到数据库）---
 
+  const canUndo = activeTransactions.length > 0;
+  const canRedo = undonePersonIds.includes(activePersonId);
+
   const undo = async () => {
-    if (transactions.length === 0 || undoRedoLoading) return;
+    if (!canUndo || undoRedoLoading) return;
     setUndoRedoLoading(true);
     try {
-      await api.post('/api/undo-redo', { action: 'undo' });
+      await api.post('/api/undo-redo', { action: 'undo', personId: activePersonId });
       await refreshData();
     } catch (err: any) {
       alert('撤销失败: ' + err.message);
@@ -442,10 +445,10 @@ const App: React.FC = () => {
   };
 
   const redo = async () => {
-    if (!hasUndone || undoRedoLoading) return;
+    if (!canRedo || undoRedoLoading) return;
     setUndoRedoLoading(true);
     try {
-      await api.post('/api/undo-redo', { action: 'redo' });
+      await api.post('/api/undo-redo', { action: 'redo', personId: activePersonId });
       await refreshData();
     } catch (err: any) {
       alert('重做失败: ' + err.message);
@@ -489,7 +492,7 @@ const App: React.FC = () => {
         createdAt: txData.createdAt,
         description: txData.description,
       }, ...prev]);
-      setHasUndone(false);
+      setUndonePersonIds(prev => prev.filter(id => id !== activePersonId));
     } catch (err: any) {
       alert('操作失败: ' + err.message);
     }
@@ -521,7 +524,7 @@ const App: React.FC = () => {
         createdAt: txData.createdAt,
         description: txData.description,
       }, ...prev]);
-      setHasUndone(false);
+      setUndonePersonIds(prev => prev.filter(id => id !== activePersonId));
     } catch (err: any) {
       alert('操作失败: ' + err.message);
     }
@@ -889,18 +892,18 @@ const App: React.FC = () => {
 
       {/* --- Tab Bar --- */}
       <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 px-6 py-4 flex justify-between items-center z-40 pb-safe-area-inset-bottom shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
-        <button onClick={undo} disabled={transactions.length === 0 || undoRedoLoading} className="flex flex-col items-center gap-1 group">
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${transactions.length > 0 && !undoRedoLoading ? 'bg-gray-50 text-blue-600 ios-btn-active' : 'text-gray-200'}`}>
+        <button onClick={undo} disabled={!canUndo || undoRedoLoading} className="flex flex-col items-center gap-1 group">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${canUndo && !undoRedoLoading ? 'bg-gray-50 text-blue-600 ios-btn-active' : 'text-gray-200'}`}>
             <i className="fa-solid fa-arrow-rotate-left text-xl"></i>
           </div>
-          <span className={`text-[10px] font-black ${transactions.length > 0 && !undoRedoLoading ? 'text-gray-500' : 'text-gray-200'}`}>后退</span>
+          <span className={`text-[10px] font-black ${canUndo && !undoRedoLoading ? 'text-gray-500' : 'text-gray-200'}`}>后退</span>
         </button>
 
-        <button onClick={redo} disabled={!hasUndone || undoRedoLoading} className="flex flex-col items-center gap-1 group">
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${hasUndone && !undoRedoLoading ? 'bg-gray-50 text-blue-600 ios-btn-active' : 'text-gray-200'}`}>
+        <button onClick={redo} disabled={!canRedo || undoRedoLoading} className="flex flex-col items-center gap-1 group">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${canRedo && !undoRedoLoading ? 'bg-gray-50 text-blue-600 ios-btn-active' : 'text-gray-200'}`}>
             <i className="fa-solid fa-arrow-rotate-right text-xl"></i>
           </div>
-          <span className={`text-[10px] font-black ${hasUndone && !undoRedoLoading ? 'text-gray-500' : 'text-gray-200'}`}>前进</span>
+          <span className={`text-[10px] font-black ${canRedo && !undoRedoLoading ? 'text-gray-500' : 'text-gray-200'}`}>前进</span>
         </button>
 
         <button onClick={() => setIsClearModalOpen(true)} className="flex flex-col items-center gap-1 group">
