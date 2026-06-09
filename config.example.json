@@ -1,0 +1,9 @@
+{
+  "addr": "127.0.0.1:18081",
+  "dbPath": "wallet.db",
+  "jwtSecret": "请替换为长随机字符串",
+  "adminUsername": "admin",
+  "adminPassword": "admin123",
+  "adminUsernames": [],
+  "bcryptCost": 10
+}
