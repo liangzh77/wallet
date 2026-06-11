@@ -84,13 +84,9 @@ input {
   width: 64px;
   height: 64px;
   margin: 0 auto 16px;
-  display: grid;
-  place-items: center;
   border-radius: 22px;
-  background: var(--blue);
-  color: #fff;
-  font-size: 34px;
-  font-weight: 900;
+  display: block;
+  box-shadow: 0 14px 30px rgba(47, 107, 234, 0.18);
 }
 
 .auth-card h1 {
@@ -228,9 +224,30 @@ label input {
   top: 28px;
   width: 58px;
   height: 48px;
-  border-radius: 8px;
-  background: #f0f0f0;
-  color: #f0f0f0;
+  border-radius: 10px;
+  background: #eef1f6;
+}
+
+.card-icon::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 10px;
+  width: 40px;
+  height: 4px;
+  border-radius: 99px;
+  background: #fff;
+}
+
+.card-icon::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
 }
 
 .wage-card {
@@ -256,9 +273,43 @@ label input {
 }
 
 .coin-icon {
-  color: #d7dce4;
-  font-size: 20px;
-  letter-spacing: -8px;
+  position: relative;
+  width: 28px;
+  height: 24px;
+  flex: 0 0 28px;
+}
+
+.coin-icon,
+.coin-icon::before,
+.coin-icon::after {
+  border-radius: 999px;
+  background: #d7dce4;
+}
+
+.coin-icon {
+  width: 22px;
+  height: 10px;
+  box-shadow: 0 5px 0 #d7dce4, 0 10px 0 #d7dce4;
+}
+
+.coin-icon::before,
+.coin-icon::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 10px;
+}
+
+.coin-icon::before {
+  right: -6px;
+  top: 4px;
+  opacity: 0.78;
+}
+
+.coin-icon::after {
+  right: -2px;
+  top: -5px;
+  opacity: 0.55;
 }
 
 .adjust-card {

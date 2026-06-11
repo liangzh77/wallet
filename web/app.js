@@ -15,6 +15,7 @@ const state = {
 };
 
 const app = document.getElementById("app");
+const BEIJING_TIME_ZONE = "Asia/Shanghai";
 
 const byId = (id) => document.getElementById(id);
 const money = (value) => `¥${Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
@@ -67,7 +68,7 @@ async function loadWallet(checkWages = false) {
   if (checkWages) {
     const wage = await api("/api/wages/check", { method: "POST", body: "{}" });
     if (wage.payments?.length) {
-      state.notice = `已自动发放 ${wage.payments.length} 笔日薪`;
+      state.notice = formatWageNotice(wage.payments);
       return loadWallet(false);
     }
   }
@@ -84,7 +85,7 @@ function renderAuth() {
   app.innerHTML = `
     <main class="phone auth-screen">
       <section class="auth-card">
-        <div class="auth-mark">¥</div>
+        <img class="auth-mark" src="/favicon.svg" alt="" aria-hidden="true">
         <h1>家庭记账本</h1>
         <form id="auth-form" class="auth-form">
           <label>用户名<input id="username" autocomplete="username" required></label>
@@ -175,14 +176,14 @@ function renderWalletContent(person, txs) {
         <p>${escapeHTML(person.name)} 的现金余额</p>
         <h1>${money(person.balance)}</h1>
       </div>
-      <span class="card-icon">▰</span>
+      <span class="card-icon" aria-hidden="true"></span>
     </section>
     <section class="wage-card">
       <div>
         <p>今日薪酬（于设置中修改）</p>
         <strong><span>¥</span> ${moneyPlain(person.dailyWage)}</strong>
       </div>
-      <span class="coin-icon">●●●</span>
+      <span class="coin-icon" aria-hidden="true"></span>
     </section>
     <section class="adjust-card">
       <div class="adjust-row">
@@ -306,7 +307,7 @@ function renderAdminPanel() {
           <article class="admin-row">
             <div>
               <strong>${escapeHTML(u.username)}</strong>
-              <span>${u.isAdmin ? "管理员" : "普通用户"} · ${u.createdAt || ""}</span>
+              <span>${u.isAdmin ? "管理员" : "普通用户"} · ${formatDate(u.createdAt)}</span>
             </div>
             <div class="row-actions">
               <button class="edit" data-reset-user="${u.id}" aria-label="重置 ${escapeAttr(u.username)} 的密码">改密</button>
@@ -330,7 +331,7 @@ function renderAdminOnly() {
             <article class="admin-row">
               <div>
                 <strong>${escapeHTML(u.username)}</strong>
-                <span>${u.isAdmin ? "管理员" : "普通用户"} · ${u.createdAt || ""}</span>
+                <span>${u.isAdmin ? "管理员" : "普通用户"} · ${formatDate(u.createdAt)}</span>
               </div>
               <div class="row-actions">
                 <button class="edit" data-reset-user="${u.id}" aria-label="重置 ${escapeAttr(u.username)} 的密码">改密</button>
@@ -615,15 +616,34 @@ function logout() {
 }
 
 function formatDate(value) {
-  const date = new Date(String(value).replace(" ", "T"));
+  const date = parseServerDate(value);
   if (Number.isNaN(date.getTime())) return value || "";
   return date.toLocaleString("zh-CN", {
+    timeZone: BEIJING_TIME_ZONE,
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
+}
+
+function formatWageNotice(payments) {
+  const days = [...new Set(
+    payments
+      .map((payment) => Number(payment.days || 0))
+      .filter((day) => day > 0)
+  )].sort((a, b) => a - b);
+  if (!days.length) return "已自动发放日薪";
+  return `已自动发放 ${days.map((day) => `${day} 天`).join("、")}日薪`;
+}
+
+function parseServerDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return new Date(NaN);
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+  return new Date(hasZone ? normalized : `${normalized}Z`);
 }
 
 function escapeHTML(value) {
